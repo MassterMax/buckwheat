@@ -62,7 +62,7 @@ class TreeSitterParser:
 
     NODE_TYPES = {"JavaScript": {"identifier", "property_identifier",
                                  "shorthand_property_identifier"},
-                  "Python": {"identifier"},
+                  "Python": {"identifier", "function_definition", "name"},
                   "Java": {"identifier", "type_identifier"},
                   "Go": {"identifier", "field_identifier", "type_identifier"},
                   "C++": {"identifier", "namespace_identifier", "field_identifier",
@@ -122,9 +122,17 @@ class TreeSitterParser:
                 if child.type in TreeSitterParser.NODE_TYPES[lang]:
                     start, end = TreeSitterParser.get_positional_bytes(child)
                     token = content[start:end].decode("utf-8")
-                    if "\n" not in token:  # Will break output files.
-                        subtokens = list(Subtokenizer.process_token(token))
-                        tokens.extend(subtokens)
+
+                    if node.type == 'function_definition' and child.type == 'identifier':
+                        # subtokens = list(Subtokenizer.process_token(token))
+                        # tokens.extend(subtokens)
+                        tokens.append(token)
+
+                        # print(token, start, end)
+
+                    # if "\n" not in token:  # Will break output files.
+                    #     subtokens = list(Subtokenizer.process_token(token))
+                    #     tokens.extend(subtokens)
                 if len(child.children) != 0:
                     traverse_tree(child)
 
@@ -132,6 +140,10 @@ class TreeSitterParser:
             traverse_tree(root)
         except RecursionError:
             return Counter()
+
+        # for el in tokens:
+        #     print(el[:min(10, len(el))])
+
         return Counter(tokens)
 
 
@@ -242,6 +254,10 @@ def get_tokens(file: str, lang: str) -> (str, Counter):
             return file, PygmentsParser.get_tokens(file, lang)
     except (UnicodeDecodeError, FileNotFoundError):
         return file, Counter()
+
+
+def my_transform_tokens(tokens: Counter, token2number: dict) -> List[str]:
+    return [token[0] for token in sorted(tokens.items(), key=itemgetter(1), reverse=True)]
 
 
 def transform_tokens(tokens: Counter, token2number: dict) -> List[str]:
@@ -363,9 +379,19 @@ def tokenize_repositories(repositories_file: str, output_dir: str,
                     else:
                         fout.write(repository + "\n")
                         for file in file2tokens.keys():
-                            fout.write("{file};{tokens}\n"
-                                       .format(file=file[len(repo_root_path):],
-                                               tokens=",".join(transform_tokens(file2tokens[file], token2number))))
+                            # tokens = transform_tokens(file2tokens[file], token2number)
+                            # if len(tokens) == 0:
+                            #     continue
+                            # print("================")
+                            # print(tokens)
+                            # print(file2tokens[file])
+                            my_tokens = my_transform_tokens(file2tokens[file], token2number)
+                            my_tokens = [x for x in my_tokens if x in rep2tokens[repository]]
+                            if len(my_tokens) == 0:
+                                continue
+                            # print(my_tokens)
+                            fout.write(
+                                "{file};{tokens}\n".format(file=file[len(repo_root_path):], tokens=",".join(my_tokens)))
             # Writing the vocabulary, mapping numbers to tokens
             with open(os.path.abspath(os.path.join(output_dir,
                                                    f"vocab{count_batch}.txt")), "w+") as fout:
